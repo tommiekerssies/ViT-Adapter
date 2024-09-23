@@ -13,38 +13,76 @@ from torch.nn.init import normal_
 from .base.beit import BEiT
 from .adapter_modules import SpatialPriorModule, InteractionBlock, deform_inputs
 
+import timm
+
 _logger = logging.getLogger(__name__)
 
 
 @BACKBONES.register_module()
-class BEiTAdapter(BEiT):
-    def __init__(self, pretrain_size=224, conv_inplane=64, n_points=4, deform_num_heads=6,
-                 init_values=0., cffn_ratio=0.25, deform_ratio=1.0, with_cffn=True,
-                 interaction_indexes=None, add_vit_feature=True, version='new',
-                 with_cp=False, *args, **kwargs):
+# class BEiTAdapter(BEiT):
+class BEiTAdapter(nn.Module):
+    def __init__(
+        self,
+        # pretrain_size=224,
+        conv_inplane=64,
+        n_points=4,
+        deform_num_heads=6,
+        init_values=0.0,
+        cffn_ratio=0.25,
+        deform_ratio=1.0,
+        with_cffn=True,
+        interaction_indexes=None,
+        add_vit_feature=True,
+        version="new",
+        with_cp=False,
+        *args,
+        **kwargs
+    ):
 
-        super().__init__(init_values=init_values, with_cp=with_cp, *args, **kwargs)
+        # super().__init__(init_values=init_values, with_cp=with_cp, *args, **kwargs)
+        super().__init__()
+
+        self.encoder = timm.create_model(
+            "vit_large_patch14_reg4_dinov2",
+            pretrained=True,
+            num_classes=0,
+            dynamic_img_size=True,
+            patch_size=kwargs["patch_size"],
+        )
+
+        del self.encoder.norm
 
         # self.num_classes = 80
         # self.cls_token = None
         self.version = version
-        self.num_block = len(self.blocks)
-        self.pretrain_size = (pretrain_size, pretrain_size)
+        self.num_block = len(self.encoder.blocks)
+        # self.pretrain_size = (pretrain_size, pretrain_size)
         self.interaction_indexes = interaction_indexes
         self.add_vit_feature = add_vit_feature
-        embed_dim = self.embed_dim
+        embed_dim = self.encoder.embed_dim
 
         self.level_embed = nn.Parameter(torch.zeros(3, embed_dim))
         self.spm = SpatialPriorModule(inplanes=conv_inplane, embed_dim=embed_dim)
-        self.interactions = nn.Sequential(*[
-            InteractionBlock(dim=embed_dim, num_heads=deform_num_heads, n_points=n_points,
-                             init_values=init_values, drop_path=self.drop_path_rate,
-                             norm_layer=self.norm_layer, with_cffn=with_cffn,
-                             cffn_ratio=cffn_ratio, deform_ratio=deform_ratio,
-                             extra_extractor=True if i == len(interaction_indexes) - 1 else False,
-                             with_cp=with_cp)
-            for i in range(len(interaction_indexes))
-        ])
+        self.interactions = nn.Sequential(
+            *[
+                InteractionBlock(
+                    dim=embed_dim,
+                    num_heads=deform_num_heads,
+                    n_points=n_points,
+                    init_values=init_values,
+                    drop_path=0.0,
+                    norm_layer=nn.LayerNorm,
+                    with_cffn=with_cffn,
+                    cffn_ratio=cffn_ratio,
+                    deform_ratio=deform_ratio,
+                    extra_extractor=(
+                        True if i == len(interaction_indexes) - 1 else False
+                    ),
+                    with_cp=with_cp,
+                )
+                for i in range(len(interaction_indexes))
+            ]
+        )
 
         self.up = nn.ConvTranspose2d(embed_dim, embed_dim, 2, 2)
         self.norm1 = nn.SyncBatchNorm(embed_dim)
@@ -60,7 +98,7 @@ class BEiTAdapter(BEiT):
 
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
-            trunc_normal_(m.weight, std=.02)
+            trunc_normal_(m.weight, std=0.02)
             if isinstance(m, nn.Linear) and m.bias is not None:
                 nn.init.constant_(m.bias, 0)
         elif isinstance(m, nn.LayerNorm) or isinstance(m, nn.BatchNorm2d):
@@ -75,9 +113,13 @@ class BEiTAdapter(BEiT):
 
     def _get_pos_embed(self, pos_embed, H, W):
         pos_embed = pos_embed.reshape(
-            1, self.pretrain_size[0] // 16, self.pretrain_size[1] // 16, -1).permute(0, 3, 1, 2)
-        pos_embed = F.interpolate(pos_embed, size=(H, W), mode='bicubic', align_corners=False). \
-            reshape(1, -1, H * W).permute(0, 2, 1)
+            1, self.pretrain_size[0] // 16, self.pretrain_size[1] // 16, -1
+        ).permute(0, 3, 1, 2)
+        pos_embed = (
+            F.interpolate(pos_embed, size=(H, W), mode="bicubic", align_corners=False)
+            .reshape(1, -1, H * W)
+            .permute(0, 2, 1)
+        )
         return pos_embed
 
     def _init_deform_weights(self, m):
@@ -99,26 +141,45 @@ class BEiTAdapter(BEiT):
         c = torch.cat([c2, c3, c4], dim=1)
 
         # Patch Embedding forward
-        x, H, W = self.patch_embed(x)
+        # x, H, W = self.patch_embed(x)
+        H, W = (
+            x.shape[-2] // self.encoder.patch_embed.patch_size[-2],
+            x.shape[-1] // self.encoder.patch_embed.patch_size[-1],
+        )
+        x = self.encoder.patch_embed(x)
+
+        x = self.encoder._pos_embed(x)
+
         bs, n, dim = x.shape
-        if self.pos_embed is not None:
-            pos_embed = self._get_pos_embed(self.pos_embed, H, W)
-            x = x + pos_embed
-        x = self.pos_drop(x)
+
+        x = self.encoder.patch_drop(x)
+        x = self.encoder.norm_pre(x)
+
+        # if self.pos_embed is not None:
+        #     pos_embed = self._get_pos_embed(self.pos_embed, H, W)
+        #     x = x + pos_embed
+        # x = self.pos_drop(x)
 
         # Interaction
         outs = list()
         for i, layer in enumerate(self.interactions):
             indexes = self.interaction_indexes[i]
-            x, c = layer(x, c, self.blocks[indexes[0]:indexes[-1] + 1],
-                         deform_inputs1, deform_inputs2, H, W)
-            if self.version == 'old':
-                outs.append(x.transpose(1, 2).view(bs, dim, H, W).contiguous())
+            x, c = layer(
+                x,
+                c,
+                self.encoder.blocks[indexes[0] : indexes[-1] + 1],
+                deform_inputs1,
+                deform_inputs2,
+                H,
+                W,
+            )
+            # if self.version == "old":
+            #     outs.append(x.transpose(1, 2).view(bs, dim, H, W).contiguous())
 
         # Split & Reshape
-        c2 = c[:, 0:c2.size(1), :]
-        c3 = c[:, c2.size(1):c2.size(1) + c3.size(1), :]
-        c4 = c[:, c2.size(1) + c3.size(1):, :]
+        c2 = c[:, 0 : c2.size(1), :]
+        c3 = c[:, c2.size(1) : c2.size(1) + c3.size(1), :]
+        c4 = c[:, c2.size(1) + c3.size(1) :, :]
 
         c2 = c2.transpose(1, 2).view(bs, dim, H * 2, W * 2).contiguous()
         c3 = c3.transpose(1, 2).view(bs, dim, H, W).contiguous()
@@ -126,14 +187,17 @@ class BEiTAdapter(BEiT):
         c1 = self.up(c2) + c1
 
         if self.add_vit_feature:
-            if self.version == 'old':
-                x1, x2, x3, x4 = outs
-            else:
-                x = x.transpose(1, 2).view(bs, dim, H, W).contiguous()
-                x1, x2, x3, x4 = x, x, x, x
-            x1 = F.interpolate(x1, scale_factor=4, mode='bilinear', align_corners=False)
-            x2 = F.interpolate(x2, scale_factor=2, mode='bilinear', align_corners=False)
-            x4 = F.interpolate(x4, scale_factor=0.5, mode='bilinear', align_corners=False)
+            # if self.version == "old":
+            #     x1, x2, x3, x4 = outs
+            # else:
+            x = x[:, -H * W :, :]
+            x = x.transpose(1, 2).view(bs, dim, H, W).contiguous()
+            x1, x2, x3, x4 = x, x, x, x
+            x1 = F.interpolate(x1, scale_factor=4, mode="bilinear", align_corners=False)
+            x2 = F.interpolate(x2, scale_factor=2, mode="bilinear", align_corners=False)
+            x4 = F.interpolate(
+                x4, scale_factor=0.5, mode="bilinear", align_corners=False
+            )
             c1, c2, c3, c4 = c1 + x1, c2 + x2, c3 + x3, c4 + x4
 
         # Final Norm
