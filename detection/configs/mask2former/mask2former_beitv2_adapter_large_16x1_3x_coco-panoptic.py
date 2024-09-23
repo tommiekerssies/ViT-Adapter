@@ -325,7 +325,7 @@ dynamic_intervals = [(max_iters // interval * interval + 1, max_iters)]
 evaluation = dict(
     interval=interval,
     dynamic_intervals=dynamic_intervals,
-    metric=["PQ", "bbox", "segm"],
+    metric=["PQ"],  # , "bbox", "segm"],
 )
 custom_hooks = [
     dict(type="ExpMomentumEMAHook", resume_from=None, momentum=0.0001, priority=49)
