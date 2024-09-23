@@ -10,6 +10,7 @@ import mmcv
 import mmcv_custom  # noqa: F401,F403
 import mmdet_custom  # noqa: F401,F403
 import torch
+from torch import nn
 from mmcv import Config, DictAction
 from mmcv.runner import get_dist_info, init_dist
 from mmcv.utils import get_git_hash
@@ -189,6 +190,17 @@ def main():
         )
     # add an attribute for visualization convenience
     model.CLASSES = datasets[0].CLASSES
+
+    for name, submodule in model.backbone.encoder.named_children():
+        if "blocks" in name and isinstance(submodule, nn.Sequential):
+            for i, block in enumerate(submodule):
+                compiled_block = torch.compile(block)
+                submodule[i] = compiled_block
+            setattr(model.backbone.encoder, name, submodule)
+        else:
+            compiled_submodule = torch.compile(submodule)
+            setattr(model.backbone.encoder, name, compiled_submodule)
+
     train_detector(
         model,
         datasets,

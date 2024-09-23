@@ -284,7 +284,9 @@ class InteractionBlock(nn.Module):
             ),
             dim=1,
         )
-        x = blocks(x)
+        with torch.autocast(device_type="cuda", dtype=torch.float16):
+            for block in blocks:
+                x = block(x)
         c = self.extractor(
             query=c,
             reference_points=deform_inputs2[0],

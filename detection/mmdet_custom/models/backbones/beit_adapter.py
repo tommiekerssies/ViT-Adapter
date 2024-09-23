@@ -49,7 +49,6 @@ class BEiTAdapter(nn.Module):
             dynamic_img_size=True,
             patch_size=kwargs["patch_size"],
         )
-
         del self.encoder.norm
 
         # self.num_classes = 80
@@ -111,16 +110,11 @@ class BEiTAdapter(nn.Module):
             if m.bias is not None:
                 m.bias.data.zero_()
 
-    def _get_pos_embed(self, pos_embed, H, W):
-        pos_embed = pos_embed.reshape(
-            1, self.pretrain_size[0] // 16, self.pretrain_size[1] // 16, -1
-        ).permute(0, 3, 1, 2)
-        pos_embed = (
-            F.interpolate(pos_embed, size=(H, W), mode="bicubic", align_corners=False)
-            .reshape(1, -1, H * W)
-            .permute(0, 2, 1)
-        )
-        return pos_embed
+    def init_weights(self, pretrained=None):
+        pass
+
+    def get_num_layers(self):
+        return len(self.encoder.blocks)
 
     def _init_deform_weights(self, m):
         if isinstance(m, MSDeformAttn):
@@ -142,18 +136,19 @@ class BEiTAdapter(nn.Module):
 
         # Patch Embedding forward
         # x, H, W = self.patch_embed(x)
-        H, W = (
-            x.shape[-2] // self.encoder.patch_embed.patch_size[-2],
-            x.shape[-1] // self.encoder.patch_embed.patch_size[-1],
-        )
-        x = self.encoder.patch_embed(x)
+        with torch.autocast(device_type="cuda", dtype=torch.float16):
+            H, W = (
+                x.shape[-2] // self.encoder.patch_embed.patch_size[-2],
+                x.shape[-1] // self.encoder.patch_embed.patch_size[-1],
+            )
+            x = self.encoder.patch_embed(x)
 
-        x = self.encoder._pos_embed(x)
+            x = self.encoder._pos_embed(x)
 
-        bs, n, dim = x.shape
+            bs, n, dim = x.shape
 
-        x = self.encoder.patch_drop(x)
-        x = self.encoder.norm_pre(x)
+            x = self.encoder.patch_drop(x)
+            x = self.encoder.norm_pre(x)
 
         # if self.pos_embed is not None:
         #     pos_embed = self._get_pos_embed(self.pos_embed, H, W)
