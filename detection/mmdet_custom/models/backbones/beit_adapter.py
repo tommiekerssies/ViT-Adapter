@@ -17,9 +17,8 @@ import timm
 
 _logger = logging.getLogger(__name__)
 
-
-@BACKBONES.register_module()
 # class BEiTAdapter(BEiT):
+@BACKBONES.register_module()
 class BEiTAdapter(nn.Module):
     def __init__(
         self,
