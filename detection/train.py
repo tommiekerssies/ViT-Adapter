@@ -4,6 +4,7 @@ import copy
 import os
 import os.path as osp
 import time
+from torch import nn
 
 import mmcv
 import mmcv_custom  # noqa: F401,F403
