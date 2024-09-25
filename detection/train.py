@@ -109,15 +109,15 @@ def main():
             mmdet_version=__version__ + get_git_hash()[:7], CLASSES=datasets[0].CLASSES
         )
 
-    for name, submodule in model.backbone.encoder.named_children():
-        if "blocks" in name and isinstance(submodule, nn.Sequential):
-            for i, block in enumerate(submodule):
-                compiled_block = torch.compile(block)
-                submodule[i] = compiled_block
-            setattr(model.backbone.encoder, name, submodule)
-        else:
-            compiled_submodule = torch.compile(submodule)
-            setattr(model.backbone.encoder, name, compiled_submodule)
+    # for name, submodule in model.backbone.encoder.named_children():
+    #     if "blocks" in name and isinstance(submodule, nn.Sequential):
+    #         for i, block in enumerate(submodule):
+    #             compiled_block = torch.compile(block)
+    #             submodule[i] = compiled_block
+    #         setattr(model.backbone.encoder, name, submodule)
+    #     else:
+    #         compiled_submodule = torch.compile(submodule)
+    #         setattr(model.backbone.encoder, name, compiled_submodule)
 
     train_detector(
         model,
