@@ -33,18 +33,6 @@ def parse_args():
         action="store_true",
         help="whether not to evaluate the checkpoint during training",
     )
-    group_gpus = parser.add_mutually_exclusive_group()
-    group_gpus.add_argument(
-        "--gpus",
-        type=int,
-        help="number of gpus to use (only applicable to non-distributed training)",
-    )
-    group_gpus.add_argument(
-        "--gpu-ids",
-        type=int,
-        nargs="+",
-        help="ids of gpus to use (only applicable to non-distributed training)",
-    )
     parser.add_argument("--seed", type=int, default=None, help="random seed")
     parser.add_argument(
         "--deterministic",
@@ -58,12 +46,6 @@ def parse_args():
         help="override some settings in the used config, the key-value pair "
              "in xxx=yyy format will be merged into config file.",
     )
-    parser.add_argument(
-        "--launcher",
-        choices=["none", "pytorch", "slurm", "mpi"],
-        default="none",
-        help="job launcher",
-    )
     args = parser.parse_args()
 
     return args
@@ -74,14 +56,9 @@ def main():
 
     rank = int(os.environ.get('SLURM_PROCID', 0))
     world_size = int(os.environ.get('SLURM_NTASKS', 1))
-    
+
     torch.cuda.set_device(int(os.environ.get('SLURM_LOCALID')))
     os.environ["LOCAL_RANK"] = os.environ.get('SLURM_LOCALID')
-
-    env_vars = ['SLURM_PROCID', 'SLURM_LOCALID', 'RANK', 'WORLD_SIZE', 'MASTER_ADDR', 'MASTER_PORT', 'LOCAL_RANK', 'CUDA_VISIBLE_DEVICES']
-    for var in env_vars:
-        print(f"{var}: {os.environ.get(var)}")
-
     dist.init_process_group(
         backend='nccl',
         init_method='env://',
@@ -112,10 +89,6 @@ def main():
     seed = init_random_seed(args.seed)
     set_random_seed(seed + rank, deterministic=args.deterministic)
     cfg.seed = seed
-
-    if rank == 0:
-        print(f"Rank {rank} has {torch.cuda.device_count()} GPU(s) available")
-        print(f"Rank {rank} is using device {torch.cuda.current_device()}")
 
     timestamp = time.strftime("%Y%m%d_%H%M%S", time.localtime())
     
