@@ -50,6 +50,16 @@ class BEiTAdapter(nn.Module):
         )
         del self.encoder.norm
 
+        for name, submodule in self.encoder.named_children():
+            if "blocks" in name and isinstance(submodule, nn.Sequential):
+                for i, block in enumerate(submodule):
+                    compiled_block = torch.compile(block)
+                    submodule[i] = compiled_block
+                setattr(self.encoder, name, submodule)
+            else:
+                compiled_submodule = torch.compile(submodule)
+                setattr(self.encoder, name, compiled_submodule)
+
         # self.num_classes = 80
         # self.cls_token = None
         self.version = version
