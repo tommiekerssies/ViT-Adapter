@@ -21,5 +21,5 @@ export GLOO_SOCKET_IFNAME=eno2np0
 srun --export=ALL \
     --kill-on-bad-exit=1 \
     python train.py /home/tkerssies/ViT-Adapter/detection/configs/mask2former/mask2former_beitv2_adapter_large_16x1_3x_coco-panoptic.py \
-    --work-dir=. \
+    --work-dir=/gpfs/work4/0/einf5838/ViT-Adapter/ \
     --seed 0

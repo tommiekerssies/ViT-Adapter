@@ -327,6 +327,12 @@ evaluation = dict(
     dynamic_intervals=dynamic_intervals,
     metric=["PQ"],  # , "bbox", "segm"],
 )
+
+# resume_from="/gpfs/work4/0/einf5838/ViT-Adapter/iter_55000.pth"
 custom_hooks = [
-    dict(type="ExpMomentumEMAHook", resume_from=None, momentum=0.0001, priority=49)
+    dict(
+        # resume_from="/gpfs/work4/0/einf5838/ViT-Adapter/iter_55000.pth", 
+        type="ExpMomentumEMAHook", 
+        momentum=0.0001, priority=49
+    )
 ]
